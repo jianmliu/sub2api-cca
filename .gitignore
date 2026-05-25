@@ -1,0 +1,9 @@
+.env
+.env.*
+!.env.example
+broadcast/
+cache/
+lib/
+out/
+node_modules/
+*.log
