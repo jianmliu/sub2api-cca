@@ -3,12 +3,14 @@
 Ethereum Sepolia contracts and scripts for launching **GCT** with Uniswap Continuous Clearing
 Auction (CCA).
 
-GCT is modeled here as an ERC20 token. The AI.GG/sub2api backend can mirror user deposits in
-`users.gct_balance`, while the onchain token sale and price discovery happen through Uniswap CCA.
+GCT is modeled here as an ERC20 token with EIP-3009 authorization transfers. The
+AI.GG/sub2api backend can mirror user deposits in `users.gct_balance`, while the onchain token
+sale and price discovery happen through Uniswap CCA.
 
 ## Scope
 
-- Deploy a minimal ERC20 GCT token on Ethereum Sepolia.
+- Deploy an ERC20 GCT token on Ethereum Sepolia with `transferWithAuthorization` support for
+  x402 facilitator settlement.
 - Create a CCA auction for GCT through the Uniswap CCA factory.
 - Keep auction configuration explicit and reproducible through Foundry scripts.
 - Leave production launchpad strategy, Uniswap v4 migration, compliance gating, and backend indexer
@@ -68,7 +70,8 @@ The script:
 
 Onchain:
 
-- GCT is an ERC20 token.
+- GCT is an ERC20 token with EIP-3009 `transferWithAuthorization`,
+  `receiveWithAuthorization`, and `cancelAuthorization`.
 - CCA sells GCT and discovers the GCT/raise-currency price.
 
 Backend:

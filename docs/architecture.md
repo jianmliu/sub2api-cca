@@ -4,7 +4,7 @@
 
 ```text
 Deployer
-  -> deploys GCT ERC20
+  -> deploys GCT ERC20 with EIP-3009 authorization transfers
   -> creates CCA auction using Uniswap CCA factory
   -> mints auction supply to auction contract
   -> calls auction.onTokensReceived()
@@ -15,6 +15,7 @@ Bidder
 
 AI.GG backend
   -> observes or accepts GCT deposits
+  -> can settle x402 GCT payments through transferWithAuthorization
   -> mirrors deposits into users.gct_balance
   -> consumes GCT by USD-cost / GCT price
 ```

@@ -31,8 +31,10 @@ The script intentionally prints only env key names and setting value lengths, no
 
 ## 1. Bootstrap GCT and CCA
 
-GCT's ERC20 contract address is produced by the Sepolia deployment flow. Do not configure
-`X402_GCT_ASSET` in `sub2api-listings` until this step has emitted `GCT_TOKEN`.
+GCT's ERC20 contract address is produced by the Sepolia deployment flow. The deployed token
+implements EIP-3009 `transferWithAuthorization`, so a compatible x402 facilitator can settle GCT
+top-ups directly. Do not configure `X402_GCT_ASSET` in `sub2api-listings` until this step has
+emitted `GCT_TOKEN`.
 
 ```bash
 cd /Volumes/T7-Data/sub2api3/sub2api-cca
@@ -138,6 +140,9 @@ make deposit-gct
 ```
 
 For the x402 GCT flow:
+
+The configured facilitator must advertise `X402_GCT_ASSET` under `/supported` and submit the
+token's `transferWithAuthorization` transaction during `/settle`.
 
 ```bash
 curl -X POST "$SUB2API_BASE_URL/api/v1/payment/x402/okx/top-up" \

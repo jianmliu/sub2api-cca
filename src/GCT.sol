@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-/// @notice Minimal ERC20 for testnet GCT launch experiments.
+/// @notice ERC20 GCT token with EIP-3009 authorization transfers for x402 settlement.
 /// @dev Keep this small until final token policy is fixed.
 contract GCT {
     string public name;
@@ -19,6 +19,7 @@ contract GCT {
     event Approval(address indexed owner, address indexed spender, uint256 value);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event AuthorizationUsed(address indexed authorizer, bytes32 indexed nonce);
+    event AuthorizationCanceled(address indexed authorizer, bytes32 indexed nonce);
 
     error NotOwner();
     error ZeroAddress();
@@ -28,15 +29,23 @@ contract GCT {
     error AuthorizationNotYetValid();
     error AuthorizationExpired();
     error InvalidSignature();
+    error CallerMustBePayee();
 
     bytes32 public constant TRANSFER_WITH_AUTHORIZATION_TYPEHASH = keccak256(
         "TransferWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)"
     );
+    bytes32 public constant RECEIVE_WITH_AUTHORIZATION_TYPEHASH = keccak256(
+        "ReceiveWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)"
+    );
+    bytes32 public constant CANCEL_AUTHORIZATION_TYPEHASH =
+        keccak256("CancelAuthorization(address authorizer,bytes32 nonce)");
 
     bytes32 private constant EIP712_DOMAIN_TYPEHASH = keccak256(
         "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
     );
     bytes32 private constant VERSION_HASH = keccak256("2");
+    uint256 private constant SECP256K1_HALF_ORDER =
+        0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0;
 
     modifier onlyOwner() {
         if (msg.sender != owner) revert NotOwner();
@@ -107,28 +116,63 @@ contract GCT {
         bytes32 r,
         bytes32 s
     ) external {
-        if (block.timestamp <= validAfter) revert AuthorizationNotYetValid();
-        if (block.timestamp >= validBefore) revert AuthorizationExpired();
-        if (authorizationState[from][nonce]) revert AuthorizationAlreadyUsed();
-
-        bytes32 structHash = keccak256(
-            abi.encode(
-                TRANSFER_WITH_AUTHORIZATION_TYPEHASH,
-                from,
-                to,
-                value,
-                validAfter,
-                validBefore,
-                nonce
-            )
+        _requireValidAuthorizationWindow(from, validAfter, validBefore, nonce);
+        _requireValidTransferAuthorization(
+            TRANSFER_WITH_AUTHORIZATION_TYPEHASH,
+            from,
+            to,
+            value,
+            validAfter,
+            validBefore,
+            nonce,
+            v,
+            r,
+            s
         );
-        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR(), structHash));
-        address signer = ecrecover(digest, v, r, s);
-        if (signer != from || signer == address(0)) revert InvalidSignature();
-
-        authorizationState[from][nonce] = true;
-        emit AuthorizationUsed(from, nonce);
+        _markAuthorizationUsed(from, nonce);
         _transfer(from, to, value);
+    }
+
+    function receiveWithAuthorization(
+        address from,
+        address to,
+        uint256 value,
+        uint256 validAfter,
+        uint256 validBefore,
+        bytes32 nonce,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external {
+        if (msg.sender != to) revert CallerMustBePayee();
+
+        _requireValidAuthorizationWindow(from, validAfter, validBefore, nonce);
+        _requireValidTransferAuthorization(
+            RECEIVE_WITH_AUTHORIZATION_TYPEHASH,
+            from,
+            to,
+            value,
+            validAfter,
+            validBefore,
+            nonce,
+            v,
+            r,
+            s
+        );
+        _markAuthorizationUsed(from, nonce);
+        _transfer(from, to, value);
+    }
+
+    function cancelAuthorization(address authorizer, bytes32 nonce, uint8 v, bytes32 r, bytes32 s)
+        external
+    {
+        if (authorizationState[authorizer][nonce]) revert AuthorizationAlreadyUsed();
+
+        bytes32 structHash = keccak256(abi.encode(CANCEL_AUTHORIZATION_TYPEHASH, authorizer, nonce));
+        _requireValidSignature(authorizer, structHash, v, r, s);
+
+        authorizationState[authorizer][nonce] = true;
+        emit AuthorizationCanceled(authorizer, nonce);
     }
 
     function mint(address to, uint256 value) external onlyOwner {
@@ -150,6 +194,58 @@ contract GCT {
         }
         balanceOf[to] += value;
         emit Transfer(from, to, value);
+    }
+
+    function _requireValidAuthorizationWindow(
+        address authorizer,
+        uint256 validAfter,
+        uint256 validBefore,
+        bytes32 nonce
+    ) internal view {
+        if (block.timestamp <= validAfter) revert AuthorizationNotYetValid();
+        if (block.timestamp >= validBefore) revert AuthorizationExpired();
+        if (authorizationState[authorizer][nonce]) revert AuthorizationAlreadyUsed();
+    }
+
+    function _requireValidTransferAuthorization(
+        bytes32 typeHash,
+        address from,
+        address to,
+        uint256 value,
+        uint256 validAfter,
+        uint256 validBefore,
+        bytes32 nonce,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) internal view {
+        bytes32 structHash = keccak256(
+            abi.encode(typeHash, from, to, value, validAfter, validBefore, nonce)
+        );
+        _requireValidSignature(from, structHash, v, r, s);
+    }
+
+    function _requireValidSignature(
+        address expectedSigner,
+        bytes32 structHash,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) internal view {
+        if (v < 27) {
+            v += 27;
+        }
+        if (v != 27 && v != 28) revert InvalidSignature();
+        if (uint256(s) > SECP256K1_HALF_ORDER) revert InvalidSignature();
+
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR(), structHash));
+        address signer = ecrecover(digest, v, r, s);
+        if (signer != expectedSigner || signer == address(0)) revert InvalidSignature();
+    }
+
+    function _markAuthorizationUsed(address authorizer, bytes32 nonce) internal {
+        authorizationState[authorizer][nonce] = true;
+        emit AuthorizationUsed(authorizer, nonce);
     }
 
     function _mint(address to, uint256 value) internal {
