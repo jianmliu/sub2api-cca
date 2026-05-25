@@ -1,30 +1,30 @@
-# Sepolia Joint E2E With sub2api-listings
+# Sepolia Joint E2E With aigg-src
 
 Goal:
 
 ```text
 email login through OKX Agentic Wallet
-  -> x402 USDC top-up into ordinary sub2api balance
+  -> x402 USDC top-up into ordinary AI.GG balance
   -> participate in GCT CCA on Sepolia
   -> claim ERC20 GCT
-  -> deposit GCT to sub2api
+  -> deposit GCT to AI.GG
   -> consume API with GCT deducted first
 ```
 
 ## 0. Remote Preflight
 
-The existing `sub2api-listings` live environment uses:
+The existing `aigg-src` live environment uses:
 
 ```text
-sub2api-listings/.env.local
-sub2api-listings/sub2api.pem
+aigg-src/.env.local
+aigg-src/sub2api.pem
 ```
 
 Run this before attempting the live Sepolia e2e:
 
 ```bash
-cd /Volumes/T7-Data/sub2api3/sub2api-cca
-scripts/remote-sub2api-preflight.sh
+cd /Volumes/T7-Data/sub2api3/aigg-cca
+scripts/remote-aigg-src-preflight.sh
 ```
 
 The script intentionally prints only env key names and setting value lengths, not secrets.
@@ -33,11 +33,11 @@ The script intentionally prints only env key names and setting value lengths, no
 
 GCT's ERC20 contract address is produced by the Sepolia deployment flow. The deployed token
 implements EIP-3009 `transferWithAuthorization`, so a compatible x402 facilitator can settle GCT
-top-ups directly. Do not configure `X402_GCT_ASSET` in `sub2api-listings` until this step has
+top-ups directly. Do not configure `X402_GCT_ASSET` in `aigg-src` until this step has
 emitted `GCT_TOKEN`.
 
 ```bash
-cd /Volumes/T7-Data/sub2api3/sub2api-cca
+cd /Volumes/T7-Data/sub2api3/aigg-cca
 cp .env.example .env
 $EDITOR .env
 
@@ -51,7 +51,7 @@ GCT_TOKEN=<deployed ERC20 address>
 CCA_AUCTION=<deployed CCA auction address>
 ```
 
-## 2. Configure sub2api-listings
+## 2. Configure aigg-src
 
 Set these env vars for the backend:
 

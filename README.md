@@ -1,10 +1,10 @@
-# sub2api-cca
+# aigg-cca
 
 Ethereum Sepolia contracts and scripts for launching **GCT** with Uniswap Continuous Clearing
 Auction (CCA).
 
 GCT is modeled here as an ERC20 token with EIP-3009 authorization transfers. The
-AI.GG/sub2api backend can mirror user deposits in `users.gct_balance`, while the onchain token
+AI.GG backend can mirror user deposits in `users.gct_balance`, while the onchain token
 sale and price discovery happen through Uniswap CCA.
 
 ## Scope
@@ -49,7 +49,7 @@ make bootstrap-cca
 3. Creates the CCA distribution using `GCT_TOKEN`.
 4. Writes the emitted auction address back to `.env` as `CCA_AUCTION`.
 
-Use the generated `GCT_TOKEN` as `X402_GCT_ASSET` in `sub2api-listings`.
+Use the generated `GCT_TOKEN` as `X402_GCT_ASSET` in `aigg-src`.
 
 ## Manual Deploy GCT CCA
 
@@ -95,4 +95,4 @@ See [docs/deployments.md](docs/deployments.md) for deployed GCT addresses and tr
 ## Joint E2E
 
 See [docs/e2e-sepolia.md](docs/e2e-sepolia.md) for the end-to-end flow with
-`sub2api-listings`, OKX Agentic Wallet, x402, CCA, and GCT consumption.
+`aigg-src`, OKX Agentic Wallet, x402, CCA, and GCT consumption.

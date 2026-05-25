@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LISTINGS_DIR="${LISTINGS_DIR:-/Volumes/T7-Data/sub2api3/sub2api-listings}"
+LISTINGS_DIR="${LISTINGS_DIR:-/Volumes/T7-Data/sub2api3/aigg-src}"
 ENV_FILE="${ENV_FILE:-$LISTINGS_DIR/.env.local}"
 SSH_KEY="${SSH_KEY:-$LISTINGS_DIR/sub2api.pem}"
 SSH_USER="${SSH_USER:-ubuntu}"
@@ -32,7 +32,7 @@ fi
 
 SSH=(ssh -i "$SSH_KEY" -o BatchMode=yes -o StrictHostKeyChecking=no -o ConnectTimeout=8 "$SSH_USER@$REMOTE_HOST")
 
-echo "sub2api remote preflight"
+echo "AI.GG source remote preflight"
 echo "repo: $ROOT_DIR"
 echo "env: $ENV_FILE"
 echo "remote: $SSH_USER@$REMOTE_HOST"

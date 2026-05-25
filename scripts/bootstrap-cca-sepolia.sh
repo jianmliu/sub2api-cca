@@ -91,7 +91,7 @@ export CCA_AUCTION="$cca_auction"
 echo "CCA_AUCTION=$cca_auction"
 
 echo
-echo "Bootstrap complete. Use this GCT address for sub2api-listings:"
+echo "Bootstrap complete. Use this GCT address for aigg-src:"
 echo "X402_GCT_ASSET=$gct_token"
 echo "GCT_TOKEN=$gct_token"
 echo "CCA_AUCTION=$cca_auction"
