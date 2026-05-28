@@ -7,3 +7,4 @@ lib/
 out/
 node_modules/
 *.log
+circle-recovery.dat
