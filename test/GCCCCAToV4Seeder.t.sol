@@ -75,23 +75,37 @@ contract MockPositionManager is IV4PositionManager {
         for (uint256 i; i < data.length; i++) {
             lastCallData.push(data[i]);
         }
-        // Simulate "settle pair" by pulling caller's full balance of each token.
+        // Simulate "settle pair" by pulling caller's full balance of each
+        // token via Permit2 (matching the real V4 PositionManager — direct
+        // ERC-20 transferFrom from a non-permit2-pre-approved owner would
+        // revert in the real contract too).
+        address permit2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
         uint256 usdcBal = IERC20(usdc).balanceOf(msg.sender);
         if (usdcBal > 0) {
-            require(
-                IERC20(usdc).transferFrom(msg.sender, address(this), usdcBal),
-                "usdc transfer failed"
-            );
+            IStubPermit2(permit2).transferFrom(msg.sender, address(this), uint160(usdcBal), usdc);
         }
         uint256 gccBal = IERC20(gcc).balanceOf(msg.sender);
         if (gccBal > 0) {
-            require(
-                IERC20(gcc).transferFrom(msg.sender, address(this), gccBal),
-                "gcc transfer failed"
-            );
+            IStubPermit2(permit2).transferFrom(msg.sender, address(this), uint160(gccBal), gcc);
         }
         bytes[] memory results = new bytes[](data.length);
         return results;
+    }
+}
+
+interface IStubPermit2 {
+    function transferFrom(address from, address to, uint160 amount, address token) external;
+}
+
+/// @dev Stub Permit2 — only the two methods the seeder touches. Accepts
+///      any approve and lets transferFrom call straight through to ERC20.
+///      In real Permit2 these are gated by allowances; the stub gates
+///      nothing so tests can focus on the seeder, not the Permit2 contract.
+contract StubPermit2 {
+    function approve(address, address, uint160, uint48) external pure {}
+
+    function transferFrom(address from, address to, uint160 amount, address token) external {
+        require(IERC20(token).transferFrom(from, to, amount), "stub permit2: transfer failed");
     }
 }
 
@@ -103,12 +117,19 @@ contract GCCCCAToV4SeederTest is Test {
     GCCCCAToV4Seeder private seeder;
 
     address private constant TREASURY = address(0xCAFE);
+    address private constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
     uint24 private constant POOL_FEE = 3000;
     int24 private constant TICK_SPACING = 60;
 
     bytes[] private emptyActions;
 
     function setUp() public {
+        // Deploy a stub at the canonical Permit2 address. The seeder
+        // hard-codes that address (constant) so we have to plant the
+        // stub there rather than thread an injected address through.
+        StubPermit2 stub = new StubPermit2();
+        vm.etch(PERMIT2, address(stub).code);
+
         gcc = new GCC("Guaranteed Capacity Credit", "GCC", address(this), 0, 1_000_000_000 ether);
         usdc = new MockUSDC();
         pm = new MockPoolManager();

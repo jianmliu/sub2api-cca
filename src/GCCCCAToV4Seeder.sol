@@ -40,6 +40,17 @@ interface IV4PositionManager {
     function multicall(bytes[] calldata data) external payable returns (bytes[] memory);
 }
 
+/// @notice Minimal Uniswap Permit2 surface used by the seeder. V4's
+///         PositionManager pulls tokens via Permit2 rather than direct
+///         allowance, so the seeder has to approve Permit2 at the ERC-20
+///         layer AND grant Permit2 the right to spend on PositionManager's
+///         behalf. Canonical Permit2 address is the same on every chain
+///         (`0x000000000022D473030F116dDEE9F6B43aC78BA3`).
+interface IPermit2 {
+    function approve(address token, address spender, uint160 amount, uint48 expiration)
+        external;
+}
+
 /// @notice GCCCCAToV4Seeder — the "exit" half of the CCA flow.
 ///
 /// @dev The CCA primary auction settles GCC distribution + clearing-price
@@ -69,6 +80,9 @@ contract GCCCCAToV4Seeder is Ownable2Step {
     IERC20 public immutable usdc;
     IV4PoolManager public immutable poolManager;
     IV4PositionManager public immutable positionManager;
+
+    /// @notice Uniswap Permit2 — same address on every EVM chain.
+    address public constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
 
     /// @notice Set once at deploy time. Fee tier of the seeded pool (e.g. 3000 = 0.3 %).
     uint24 public immutable poolFee;
@@ -177,6 +191,23 @@ contract GCCCCAToV4Seeder is Ownable2Step {
         );
     }
 
+    /// @notice Mark the V4 USDC/GCC pool as already initialised so subsequent
+    ///         `addLiquidity` calls succeed without trying to (re-)initialise
+    ///         the pool. Used when a previous seeder (or a manual ops call)
+    ///         already created the pool at PoolManager and we deploy a fresh
+    ///         seeder to add more LP to it — typically rounds 2+ in the
+    ///         unified-CCA model when the round-1 seeder is being replaced
+    ///         (e.g. for a bug fix).
+    ///
+    ///         Owner-only, callable once. If the pool actually doesn't exist
+    ///         in PoolManager, the first `addLiquidity` call will fail at
+    ///         `modifyLiquidities` time, so the worst case here is a "lied
+    ///         about pool existing" no-op rather than fund loss.
+    function adoptInitializedPool() external onlyOwner {
+        if (initialized) revert AlreadyInitialized();
+        initialized = true;
+    }
+
     /// @notice Add more liquidity to an already-initialised V4 pool. Used by
     ///         every CCA round AFTER the first one — the unified-CCA issuance
     ///         model has the platform mint a fresh GCC tranche, auction it,
@@ -218,21 +249,52 @@ contract GCCCCAToV4Seeder is Ownable2Step {
         if (usdcBalance == 0 || gccBalance == 0) revert NoLiquidity();
     }
 
-    /// @dev Approve PositionManager to pull our balances, execute the
-    ///      operator-supplied multicall (which under v4-periphery convention
-    ///      is `MINT_POSITION` + `SETTLE_PAIR`), and clear allowances back to
-    ///      zero. `forceApprove` tolerates ERC20s that require an explicit
-    ///      reset to zero before approval changes (e.g. legacy USDT).
+    /// @dev V4 PositionManager pulls tokens via Permit2 rather than reading
+    ///      direct ERC-20 allowance. To let it settle the LP mint:
+    ///
+    ///        1. Approve Permit2 at the ERC-20 layer for our balance. This
+    ///           lets Permit2 call `transferFrom` on our behalf later.
+    ///        2. Grant PositionManager a Permit2 spending allowance that
+    ///           expires shortly after this tx so a stuck approval can't be
+    ///           replayed later.
+    ///        3. Run the operator-supplied multicall (under v4-periphery
+    ///           convention: MINT_POSITION + SETTLE_PAIR).
+    ///        4. Zero out the ERC-20 → Permit2 allowance for hygiene. The
+    ///           Permit2 → PositionManager allowance self-expires.
+    ///
+    ///      `forceApprove` tolerates ERC-20s that require an explicit reset
+    ///      to zero before changing the approval (e.g. legacy USDT).
     function _mintLpPosition(
         uint256 usdcBalance,
         uint256 gccBalance,
         bytes[] calldata positionManagerActions
     ) private {
-        usdc.forceApprove(address(positionManager), usdcBalance);
-        gcc.forceApprove(address(positionManager), gccBalance);
+        usdc.forceApprove(PERMIT2, usdcBalance);
+        gcc.forceApprove(PERMIT2, gccBalance);
+
+        // Short-lived Permit2 approval; one hour is plenty for a single
+        // mint and forces a fresh approval if anyone tries to replay later.
+        uint48 expiration = uint48(block.timestamp + 1 hours);
+        IPermit2(PERMIT2).approve(
+            address(usdc), address(positionManager), _toUint160(usdcBalance), expiration
+        );
+        IPermit2(PERMIT2).approve(
+            address(gcc), address(positionManager), _toUint160(gccBalance), expiration
+        );
+
         positionManager.multicall(positionManagerActions);
-        usdc.forceApprove(address(positionManager), 0);
-        gcc.forceApprove(address(positionManager), 0);
+
+        usdc.forceApprove(PERMIT2, 0);
+        gcc.forceApprove(PERMIT2, 0);
+    }
+
+    /// @dev Saturating cast — V4 Permit2 amounts are uint160, but our
+    ///      balances are uint256. Anything beyond uint160 max is clipped to
+    ///      max; the actual transfer will still be bounded by the seeder's
+    ///      real balance.
+    function _toUint160(uint256 v) private pure returns (uint160) {
+        if (v > type(uint160).max) return type(uint160).max;
+        return uint160(v);
     }
 
     /// @notice Owner-only escape hatch. Sweeps any ERC20 (or ETH if `token`
